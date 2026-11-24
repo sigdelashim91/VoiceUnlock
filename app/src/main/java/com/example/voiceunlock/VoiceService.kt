@@ -68,9 +68,10 @@ class VoiceService : Service() {
             this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE
         )
         val n = Notification.Builder(this, "vu")
-            .setContentTitle("Voice Unlock is listening")
-            .setSmallIcon(android.R.drawable.ic_btn_speak_now)
+            .setContentTitle("Voice Unlock is on")
+            .setSmallIcon(R.drawable.ic_notify)
             .setContentIntent(open)
+            .setContentText("Say your phrase to wake the phone")
             .setOngoing(true)
             .build()
         startForeground(1, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE)
