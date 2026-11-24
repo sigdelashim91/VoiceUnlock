@@ -29,21 +29,9 @@ import android.widget.SeekBar
 import android.widget.TextView
 import kotlin.concurrent.thread
 
-class MainActivity : Activity() {
-    // Palette
-    private val PRIMARY = 0xFF2E7D6B.toInt()
-    private val PRIMARY_SOFT = 0xFFE3F1EC.toInt()
-    private val BG = 0xFFF4F6F5.toInt()
-    private val CARD = 0xFFFFFFFF.toInt()
-    private val TEXT = 0xFF1C2421.toInt()
-    private val MUTED = 0xFF6B7672.toInt()
-    private val LINE = 0xFFDCE2DF.toInt()
-    private val OFF = 0xFFE9EDEB.toInt()
-    private val ERROR = 0xFFC2412D.toInt()
-    private val ERROR_SOFT = 0xFFFCECE8.toInt()
-
+class MainActivity : BaseUi() {
     private lateinit var heroCard: LinearLayout
-    private lateinit var heroIcon: TextView
+    private lateinit var heroIcon: PulseView
     private lateinit var heroTitle: TextView
     private lateinit var heroSub: TextView
     private lateinit var heroButton: Button
@@ -66,6 +54,13 @@ class MainActivity : Activity() {
     private lateinit var savedCheck: CheckView
     private lateinit var voiceRetry: RetryBar
 
+    private lateinit var testCard: LinearLayout
+    private lateinit var testDesc: TextView
+    private lateinit var testButton: Button
+    private lateinit var adminLink: TextView
+    private val entrance = mutableListOf<View>()
+    private var wasReady: Boolean? = null
+
     private lateinit var sensValue: TextView
     private lateinit var lastMatch: TextView
 
@@ -74,69 +69,6 @@ class MainActivity : Activity() {
     private var downloadError: String? = null
     private var voiceError: String? = null
     private var playSavedAnim = false
-
-    // ---------- small helpers ----------
-
-    private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
-
-    private fun rounded(color: Int, radius: Int, strokeColor: Int? = null) = GradientDrawable().apply {
-        setColor(color)
-        cornerRadius = dp(radius).toFloat()
-        if (strokeColor != null) setStroke(dp(1), strokeColor)
-    }
-
-    private fun text(s: String, size: Float, color: Int = TEXT, bold: Boolean = false) =
-        TextView(this).apply {
-            text = s; textSize = size; setTextColor(color)
-            if (bold) typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
-            setLineSpacing(0f, 1.15f)
-        }
-
-    private fun pill(label: String, filled: Boolean, color: Int = PRIMARY, onClick: () -> Unit) = Button(this).apply {
-        text = label
-        isAllCaps = false
-        textSize = 15f
-        typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
-        stateListAnimator = null
-        minHeight = dp(44); minimumHeight = dp(44)
-        minWidth = 0; minimumWidth = 0
-        setPadding(dp(20), 0, dp(20), 0)
-        setTextColor(if (filled) CARD else color)
-        background = if (filled) rounded(color, 24) else rounded(CARD, 24, color)
-        setOnClickListener { onClick() }
-    }
-
-    private fun lp(top: Int = 0, bottom: Int = 0, matchWidth: Boolean = true) = LinearLayout.LayoutParams(
-        if (matchWidth) LinearLayout.LayoutParams.MATCH_PARENT else LinearLayout.LayoutParams.WRAP_CONTENT,
-        LinearLayout.LayoutParams.WRAP_CONTENT
-    ).apply { topMargin = dp(top); bottomMargin = dp(bottom) }
-
-    /** Let a container smoothly resize when children appear/disappear. */
-    private fun smooth(v: ViewGroup) {
-        v.layoutTransition = LayoutTransition().apply {
-            enableTransitionType(LayoutTransition.CHANGING)
-            disableTransitionType(LayoutTransition.APPEARING)
-            disableTransitionType(LayoutTransition.DISAPPEARING)
-            setDuration(240)
-        }
-    }
-
-    private fun View.reveal(): Boolean {
-        if (visibility == View.VISIBLE && alpha == 1f) return false
-        animate().cancel()
-        if (visibility != View.VISIBLE) { alpha = 0f; translationY = dp(10).toFloat() }
-        visibility = View.VISIBLE
-        animate().alpha(1f).translationY(0f).setDuration(260)
-            .setInterpolator(DecelerateInterpolator()).withEndAction(null).start()
-        return true
-    }
-
-    private fun View.conceal() {
-        if (visibility != View.VISIBLE) return
-        animate().cancel()
-        animate().alpha(0f).translationY(-dp(6).toFloat()).setDuration(180)
-            .withEndAction { visibility = View.GONE; translationY = 0f }.start()
-    }
 
     // ---------- reusable pieces ----------
 
@@ -187,50 +119,11 @@ class MainActivity : Activity() {
         }
     }
 
-    /** Light red bar: animated ✕ icon, message, "Try again" button. */
-    inner class RetryBar(onRetry: () -> Unit) {
-        private val icon = CheckView(this@MainActivity, ERROR, success = false)
-        val msg = text("", 14f, TEXT)
-        val view = LinearLayout(this@MainActivity).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            background = rounded(ERROR_SOFT, 14)
-            setPadding(dp(12), dp(12), dp(12), dp(12))
-            visibility = View.GONE
-            addView(icon, LinearLayout.LayoutParams(dp(30), dp(30)).apply { rightMargin = dp(12) })
-            addView(msg, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-            addView(pill("Try again", filled = true, color = ERROR, onClick = onRetry).apply {
-                textSize = 14f; setPadding(dp(14), 0, dp(14), 0)
-                minHeight = dp(38); minimumHeight = dp(38)
-            }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, dp(38)).apply { leftMargin = dp(10) })
-        }
-
-        fun show(message: String) {
-            msg.text = message
-            if (view.reveal()) icon.play()
-        }
-
-        fun hide() = view.conceal()
-    }
-
-    private fun progressDrawable(): Drawable =
-        LayerDrawable(
-            arrayOf(
-                rounded(PRIMARY_SOFT, 6),
-                ClipDrawable(rounded(PRIMARY, 6), Gravity.START, ClipDrawable.HORIZONTAL)
-            )
-        ).apply {
-            setId(0, android.R.id.background)
-            setId(1, android.R.id.progress)
-        }
-
     // ---------- screen ----------
 
     @Suppress("DEPRECATION")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        window.statusBarColor = BG
-        window.decorView.systemUiVisibility = View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR
 
         val col = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -244,9 +137,8 @@ class MainActivity : Activity() {
         col.addView(text("Wake the phone just by saying a phrase.", 15f, MUTED), lp(top = 4, bottom = 20))
 
         // Status card
-        heroIcon = text("🎙", 34f).apply {
-            gravity = Gravity.CENTER
-            layoutParams = LinearLayout.LayoutParams(dp(72), dp(72))
+        heroIcon = PulseView(this, PRIMARY, CARD).apply {
+            layoutParams = LinearLayout.LayoutParams(dp(104), dp(104))
         }
         heroTitle = text("", 20f, TEXT, bold = true).apply { gravity = Gravity.CENTER }
         heroSub = text("", 14f, MUTED).apply { gravity = Gravity.CENTER }
@@ -372,9 +264,30 @@ class MainActivity : Activity() {
         sens.addView(lastMatch, lp(top = 10))
         col.addView(sens, lp(bottom = 12))
 
+        // Test card
+        testCard = card().apply { background = rounded(CARD, 20, PRIMARY_SOFT) }
+        testCard.addView(text("Try it out", 17f, TEXT, bold = true))
+        testDesc = text("", 14f, MUTED)
+        testCard.addView(testDesc, lp(top = 6))
+        testButton = pill("Start test", filled = true) {
+            startActivity(Intent(this, TestActivity::class.java))
+        }
+        testCard.addView(testButton, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(48)).apply { topMargin = dp(14) })
+        col.addView(testCard, lp(bottom = 12))
+
         col.addView(text("Works only when the phone has no PIN, pattern or password lock.", 12f, MUTED).apply {
             gravity = Gravity.CENTER
         }, lp(top = 12))
+        adminLink = text("Remove screen-off permission", 13f, PRIMARY, bold = true).apply {
+            gravity = Gravity.CENTER
+            setPadding(0, dp(10), 0, dp(10))
+            visibility = View.GONE
+            setOnClickListener { AdminReceiver.remove(this@MainActivity); ticker.postDelayed({ refresh() }, 400) }
+        }
+        col.addView(adminLink, lp(top = 4))
+
+        entrance += listOf(heroCard, stepModels.card, stepPerms.card, stepVoice.card, sens, testCard)
+        staggerIn(entrance)
     }
 
     private val ticker = android.os.Handler(android.os.Looper.getMainLooper())
@@ -397,18 +310,18 @@ class MainActivity : Activity() {
 
         // status card
         heroCard.background = rounded(if (on) PRIMARY_SOFT else OFF, 24)
-        heroIcon.background = rounded(if (on) PRIMARY else CARD, 36)
-        heroTitle.text = when {
+        heroIcon.setActive(on)
+        heroTitle.setSmooth(when {
             on -> "Listening"
             ready -> "Ready to start"
             else -> "Finish setup below"
-        }
+        })
         val ev = Store.lastEvent(this)
-        heroSub.text = when {
+        heroSub.setSmooth(when {
             on -> "Say \"${Store.phrase(this)}\" to wake the phone." + if (ev.isNotEmpty()) "\n\nLast: $ev" else ""
             ready -> "Tap Start to begin listening in the background."
             else -> "Complete the 3 steps, then come back here."
-        }
+        })
         heroButton.text = if (on) "Stop" else "Start"
         heroButton.isEnabled = on || ready
         heroButton.animate().alpha(if (heroButton.isEnabled) 1f else 0.4f).setDuration(200).start()
@@ -417,17 +330,17 @@ class MainActivity : Activity() {
 
         // step 1
         stepModels.setDone(modelsOk)
-        if (!downloading) stepModels.status.text =
+        if (!downloading) stepModels.status.setSmooth(
             if (modelsOk) "Downloaded. Works offline now."
-            else "One-time download, about 50 MB. Use Wi-Fi."
+            else "One-time download, about 50 MB. Use Wi-Fi.")
         if (downloading) dlBox.reveal() else dlBox.conceal()
         if (downloadError != null && !downloading) dlRetry.show(downloadError!!) else dlRetry.hide()
         if (!modelsOk && !downloading && downloadError == null) stepModels.button.reveal() else stepModels.button.conceal()
 
         // step 2
         stepPerms.setDone(permsOk())
-        stepPerms.status.text = if (permsOk()) "All set."
-            else "Microphone, notifications, show over other apps and unrestricted battery."
+        stepPerms.status.setSmooth(if (permsOk()) "All set."
+            else "Microphone, notifications, show over other apps and unrestricted battery.")
         if (permsOk()) stepPerms.button.conceal() else stepPerms.button.reveal()
 
         // step 3
@@ -443,9 +356,24 @@ class MainActivity : Activity() {
         if (recording) dotsRow.reveal() else dotsRow.conceal()
         if (voiceOk && !recording && voiceError == null) {
             savedRow.reveal()
-            if (playSavedAnim) { playSavedAnim = false; savedCheck.play() }
+            if (playSavedAnim) { playSavedAnim = false; savedCheck.play(); buzz(savedRow, strong = true) }
         } else savedRow.conceal()
         if (voiceError != null && !recording) voiceRetry.show(voiceError!!) else voiceRetry.hide()
+
+        // test card
+        testButton.isEnabled = ready
+        testButton.animate().alpha(if (ready) 1f else 0.4f).setDuration(200).start()
+        testDesc.setSmooth(
+            if (ready) "Check that it knows the voice, then turn the screen off and wake it by speaking."
+            else "Available once the 3 setup steps are done."
+        )
+        if (wasReady == false && ready) {
+            testCard.animate().scaleX(1.03f).scaleY(1.03f).setDuration(150).withEndAction {
+                testCard.animate().scaleX(1f).scaleY(1f).setDuration(220).withEndAction(null).start()
+            }.start()
+        }
+        wasReady = ready
+        if (AdminReceiver.isActive(this)) adminLink.reveal() else adminLink.conceal()
 
         // sensitivity
         val t = Store.threshold(this)
@@ -509,6 +437,7 @@ class MainActivity : Activity() {
         dots.forEachIndexed { i, d -> d.background = rounded(if (i < n) PRIMARY else LINE, 7) }
         if (animateLast && n in 1..dots.size) {
             val d = dots[n - 1]
+            buzz(d)
             d.scaleX = 0.2f; d.scaleY = 0.2f
             d.animate().scaleX(1f).scaleY(1f).setDuration(320)
                 .setInterpolator(OvershootInterpolator(3f)).start()

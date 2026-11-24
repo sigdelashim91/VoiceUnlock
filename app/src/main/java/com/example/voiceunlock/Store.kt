@@ -29,6 +29,9 @@ object Store {
     /** Vosk grammar: only listen for the phrase, everything else becomes [unk]. */
     fun grammar(c: Context): String = org.json.JSONArray(listOf(phrase(c), "[unk]")).toString()
 
+    fun testPending(c: Context): Boolean = p(c).getBoolean("testPending", false)
+    fun setTestPending(c: Context, v: Boolean) = p(c).edit().putBoolean("testPending", v).apply()
+
     fun voice(c: Context): DoubleArray? {
         val s = p(c).getString("voice", null) ?: return null
         return s.split(",").map { it.toDouble() }.toDoubleArray()
