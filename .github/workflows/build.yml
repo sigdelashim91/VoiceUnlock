@@ -19,15 +19,18 @@ jobs:
         with:
           gradle-version: 8.7
       - run: gradle assembleDebug --no-daemon
-      - run: cp app/build/outputs/apk/debug/app-debug.apk VoiceUnlock.apk
+      - run: |
+          cp app/build/outputs/apk/debug/app-arm64-v8a-debug.apk VoiceUnlock-64bit.apk
+          cp app/build/outputs/apk/debug/app-armeabi-v7a-debug.apk VoiceUnlock-32bit.apk
+          ls -la *.apk
       - uses: actions/upload-artifact@v5
         with:
           name: VoiceUnlock-apk
-          path: VoiceUnlock.apk
+          path: VoiceUnlock-*.apk
       - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: latest
           name: Voice Unlock (latest build)
           make_latest: true
-          files: VoiceUnlock.apk
+          files: VoiceUnlock-*.apk
