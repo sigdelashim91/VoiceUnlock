@@ -18,19 +18,50 @@ object ModelManager {
     fun spkDir(c: Context) = File(root(c), SPK)
     fun isReady(c: Context) = speechDir(c).isDirectory && spkDir(c).isDirectory
 
-    /** Blocking. Call from a background thread. */
-    fun download(c: Context, onProgress: (String) -> Unit) {
-        for (name in listOf(SPEECH, SPK)) {
+    /**
+     * Blocking. Call from a background thread.
+     * onProgress(message, percent 0..100) covers both files as one overall bar.
+     */
+    fun download(c: Context, onProgress: (String, Int) -> Unit) {
+        // name, label, % range for download, % at end of unpacking
+        val plan = listOf(
+            Triple(SPEECH, "speech model", 0 to 72),
+            Triple(SPK, "voice-match model", 75 to 97)
+        )
+        for ((name, label, range) in plan) {
+            val (from, to) = range
             val target = File(root(c), name)
             if (target.isDirectory) continue
-            onProgress("Downloading $name ...")
+            onProgress("Connecting…", from)
             val zip = File(c.cacheDir, "$name.zip")
             val conn = URL("$BASE$name.zip").openConnection() as HttpURLConnection
             conn.connectTimeout = 20000
             conn.readTimeout = 30000
-            conn.inputStream.use { inp -> FileOutputStream(zip).use { out -> inp.copyTo(out) } }
+            if (conn.responseCode != 200) throw RuntimeException("server returned ${conn.responseCode}")
+            val total = conn.contentLengthLong
+            conn.inputStream.use { inp ->
+                FileOutputStream(zip).use { out ->
+                    val buf = ByteArray(64 * 1024)
+                    var done = 0L
+                    var last = -1
+                    var lastMb = -1L
+                    while (true) {
+                        val n = inp.read(buf)
+                        if (n < 0) break
+                        out.write(buf, 0, n)
+                        done += n
+                        val pct = if (total > 0) from + ((to - from) * done / total).toInt() else from
+                        val mb = done / 1_048_576
+                        if (pct != last || mb != lastMb) {
+                            last = pct; lastMb = mb
+                            val size = if (total > 0) "$mb of ${total / 1_048_576} MB" else "$mb MB"
+                            onProgress("Downloading $label… $size", pct)
+                        }
+                    }
+                }
+            }
 
-            onProgress("Unpacking $name ...")
+            onProgress("Unpacking $label…", to)
             val tmp = File(root(c), "$name.tmp")
             tmp.deleteRecursively()
             tmp.mkdirs()
@@ -48,10 +79,11 @@ object ModelManager {
             }
             // zip contains a top-level folder named like the model
             val inner = File(tmp, name)
-            (if (inner.isDirectory) inner else tmp).renameTo(target)
+            if (!(if (inner.isDirectory) inner else tmp).renameTo(target)) throw RuntimeException("could not save model")
             tmp.deleteRecursively()
             zip.delete()
+            onProgress("Unpacking $label…", if (name == SPK) 100 else to + 3)
         }
-        onProgress("Models ready.")
+        onProgress("Done", 100)
     }
 }
