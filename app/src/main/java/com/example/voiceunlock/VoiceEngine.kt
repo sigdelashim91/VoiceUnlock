@@ -17,6 +17,7 @@ import kotlin.concurrent.thread
  */
 class VoiceEngine(
     private val ctx: Context,
+    private val grammar: String? = null,
     private val onReady: (() -> Unit)? = null,
     private val onError: ((String) -> Unit)? = null,
     private val onUtterance: (text: String, spk: DoubleArray?) -> Unit
@@ -44,7 +45,9 @@ class VoiceEngine(
         try {
             model = Model(ModelManager.speechDir(ctx).path)
             spkModel = SpeakerModel(ModelManager.spkDir(ctx).path)
-            rec = Recognizer(model, 16000f, spkModel)
+            rec = if (grammar != null) {
+                Recognizer(model, 16000f, grammar).also { it.setSpeakerModel(spkModel) }
+            } else Recognizer(model, 16000f, spkModel)
 
             val min = AudioRecord.getMinBufferSize(
                 16000, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT
@@ -69,7 +72,7 @@ class VoiceEngine(
                     val text = j.optString("text", "")
                     val arr = j.optJSONArray("spk")
                     val spk = arr?.let { a -> DoubleArray(a.length()) { i -> a.getDouble(i) } }
-                    if (text.isNotBlank()) onUtterance(text, spk)
+                    if (text.isNotBlank()) onUtterance(text.replace("[unk]", "").trim(), spk)
                 }
             }
         } catch (t: Throwable) {

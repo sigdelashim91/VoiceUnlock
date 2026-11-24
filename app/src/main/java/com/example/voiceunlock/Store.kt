@@ -20,6 +20,15 @@ object Store {
     fun lastDist(c: Context): Float = p(c).getFloat("lastDist", -1f)
     fun setLastDist(c: Context, v: Float) = p(c).edit().putFloat("lastDist", v).apply()
 
+    fun lastEvent(c: Context): String = p(c).getString("lastEvent", "") ?: ""
+    fun setLastEvent(c: Context, v: String) {
+        val t = java.text.SimpleDateFormat("h:mm:ss a", java.util.Locale.US).format(java.util.Date())
+        p(c).edit().putString("lastEvent", "$t · $v").apply()
+    }
+
+    /** Vosk grammar: only listen for the phrase, everything else becomes [unk]. */
+    fun grammar(c: Context): String = org.json.JSONArray(listOf(phrase(c), "[unk]")).toString()
+
     fun voice(c: Context): DoubleArray? {
         val s = p(c).getString("voice", null) ?: return null
         return s.split(",").map { it.toDouble() }.toDoubleArray()

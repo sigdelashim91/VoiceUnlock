@@ -12,6 +12,7 @@ import android.view.WindowManager
 class UnlockActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        getSystemService(android.app.NotificationManager::class.java).cancel(VoiceService.WAKE_ID)
         setShowWhenLocked(true)
         setTurnScreenOn(true)
         window.addFlags(

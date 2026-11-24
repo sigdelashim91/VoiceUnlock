@@ -377,7 +377,13 @@ class MainActivity : Activity() {
         }, lp(top = 12))
     }
 
-    override fun onResume() { super.onResume(); refresh() }
+    private val ticker = android.os.Handler(android.os.Looper.getMainLooper())
+    private val tick = object : Runnable {
+        override fun run() { refresh(); ticker.postDelayed(this, 1000) }
+    }
+
+    override fun onResume() { super.onResume(); ticker.post(tick) }
+    override fun onPause() { ticker.removeCallbacks(tick); super.onPause() }
 
     private fun micOk() = checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
     private fun permsOk() = micOk() && Settings.canDrawOverlays(this)
@@ -397,8 +403,9 @@ class MainActivity : Activity() {
             ready -> "Ready to start"
             else -> "Finish setup below"
         }
+        val ev = Store.lastEvent(this)
         heroSub.text = when {
-            on -> "Say \"${Store.phrase(this)}\" to wake the phone."
+            on -> "Say \"${Store.phrase(this)}\" to wake the phone." + if (ev.isNotEmpty()) "\n\nLast: $ev" else ""
             ready -> "Tap Start to begin listening in the background."
             else -> "Complete the 3 steps, then come back here."
         }
@@ -527,6 +534,7 @@ class MainActivity : Activity() {
         var engine: VoiceEngine? = null
         engine = VoiceEngine(
             this,
+            grammar = Store.grammar(this),
             onReady = {
                 runOnUiThread {
                     if (enrolling === engine) stepVoice.status.text = "Listening… say \"$phrase\""
@@ -568,7 +576,8 @@ class MainActivity : Activity() {
                 }
             } else {
                 runOnUiThread {
-                    stepVoice.status.text = "Heard \"$heard\". Please say \"$phrase\"."
+                    stepVoice.status.text = if (heard.isBlank()) "Didn't catch that. Please say \"$phrase\"."
+                        else "Please say exactly \"$phrase\"."
                 }
             }
         }

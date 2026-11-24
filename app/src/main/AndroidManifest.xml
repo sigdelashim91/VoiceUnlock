@@ -30,6 +30,8 @@
 
         <activity
             android:name=".UnlockActivity"
+            android:launchMode="singleInstance"
+            android:taskAffinity=""
             android:exported="false"
             android:excludeFromRecents="true"
             android:showWhenLocked="true"
