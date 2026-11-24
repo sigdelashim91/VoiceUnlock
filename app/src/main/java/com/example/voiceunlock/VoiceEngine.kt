@@ -17,6 +17,8 @@ import kotlin.concurrent.thread
  */
 class VoiceEngine(
     private val ctx: Context,
+    private val onReady: (() -> Unit)? = null,
+    private val onError: ((String) -> Unit)? = null,
     private val onUtterance: (text: String, spk: DoubleArray?) -> Unit
 ) {
     @Volatile private var running = false
@@ -53,7 +55,11 @@ class VoiceEngine(
                 AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT,
                 maxOf(min, 8192)
             )
+            if (audio.state != AudioRecord.STATE_INITIALIZED) throw IllegalStateException("microphone not available")
             audio.startRecording()
+            if (audio.recordingState != AudioRecord.RECORDSTATE_RECORDING)
+                throw IllegalStateException("microphone is busy (another app may be using it)")
+            onReady?.invoke()
             val buf = ShortArray(2048)
             while (running) {
                 val n = audio.read(buf, 0, buf.size)
@@ -68,6 +74,7 @@ class VoiceEngine(
             }
         } catch (t: Throwable) {
             t.printStackTrace()
+            if (running) onError?.invoke(t.message ?: t.javaClass.simpleName)
         } finally {
             try { audio?.stop() } catch (_: Throwable) {}
             try { audio?.release() } catch (_: Throwable) {}

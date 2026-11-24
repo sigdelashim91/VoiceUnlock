@@ -263,7 +263,11 @@ class MainActivity : Activity() {
         if (enrolling == null) stepVoice.status.text =
             if (voiceOk) "Voice saved. Record again to replace it."
             else "The phone's owner says the phrase 5 times, in a normal voice."
-        stepVoice.button.text = if (voiceOk) "Record again" else "Start recording"
+        stepVoice.button.text = when {
+            enrolling != null -> "Cancel"
+            voiceOk -> "Record again"
+            else -> "Start recording"
+        }
 
         val t = Store.threshold(this)
         sensValue.text = when {
@@ -312,22 +316,37 @@ class MainActivity : Activity() {
     }
 
     private fun enroll() {
-        if (!ModelManager.isReady(this) || !micOk()) {
-            stepVoice.status.text = "Finish steps 1 and 2 first."; return
-        }
+        if (enrolling != null) { cancelEnroll(); return }
+        if (!ModelManager.isReady(this)) { stepVoice.status.text = "Download the voice pack first (step 1)."; return }
+        if (!micOk()) { stepVoice.status.text = "Allow the microphone first (step 2)."; return }
         val phrase = phraseBox.text.toString().trim().lowercase()
         if (phrase.isEmpty()) { stepVoice.status.text = "Type a phrase first."; return }
         Store.setPhrase(this, phrase)
-        stopService(Intent(this, VoiceService::class.java))
-        Store.setEnabled(this, false)
-        enrolling?.stop()
+        if (Store.enabled(this)) {
+            Store.setEnabled(this, false)
+            stopService(Intent(this, VoiceService::class.java))
+        }
 
         val samples = mutableListOf<DoubleArray>()
         val want = phrase.split(" ").filter { it.isNotBlank() }
-        stepVoice.status.text = "Listening… say \"$phrase\"  (0 of 5)"
-        stepVoice.button.isEnabled = false
-        refresh()
-        enrolling = VoiceEngine(this) { heard, spk ->
+        var engine: VoiceEngine? = null
+        engine = VoiceEngine(
+            this,
+            onReady = {
+                runOnUiThread {
+                    if (enrolling === engine) stepVoice.status.text = "Listening… say \"$phrase\"  (0 of 5)"
+                }
+            },
+            onError = { msg ->
+                runOnUiThread {
+                    if (enrolling === engine) {
+                        enrolling = null
+                        refresh()
+                        stepVoice.status.text = "Couldn't use the microphone: $msg. Close other apps using it and try again."
+                    }
+                }
+            }
+        ) { heard, spk ->
             if (samples.size >= 5) return@VoiceEngine
             if (spk != null && heard.lowercase().split(" ").containsAll(want)) {
                 samples.add(spk)
@@ -335,13 +354,14 @@ class MainActivity : Activity() {
                 if (n >= 5) {
                     val avg = DoubleArray(samples[0].size) { i -> samples.sumOf { it[i] } / samples.size }
                     Store.saveVoice(this, avg)
-                    val e = enrolling
-                    enrolling = null
-                    Thread { e?.stop() }.start()
                     runOnUiThread {
-                        stepVoice.button.isEnabled = true
-                        refresh()
-                        stepVoice.status.text = "Voice saved. You can start now."
+                        if (enrolling === engine) {
+                            val e = enrolling
+                            enrolling = null
+                            thread { e?.stop() }
+                            refresh()
+                            stepVoice.status.text = "Voice saved. Tap Start at the top."
+                        }
                     }
                 } else {
                     runOnUiThread { stepVoice.status.text = "Got it. Say it again  ($n of 5)" }
@@ -351,7 +371,19 @@ class MainActivity : Activity() {
                     stepVoice.status.text = "Heard \"$heard\". Please say \"$phrase\"  (${samples.size} of 5)"
                 }
             }
-        }.also { it.start() }
+        }
+        val eng = engine!!
+        enrolling = eng
+        refresh()
+        stepVoice.status.text = "Getting the microphone ready…"
+        eng.start()
+    }
+
+    private fun cancelEnroll() {
+        val e = enrolling
+        enrolling = null
+        thread { e?.stop() }
+        refresh()
     }
 
     private fun toggleService() {
@@ -359,8 +391,7 @@ class MainActivity : Activity() {
             Store.setEnabled(this, false)
             stopService(Intent(this, VoiceService::class.java))
         } else {
-            enrolling?.stop(); enrolling = null
-            stepVoice.button.isEnabled = true
+            if (enrolling != null) cancelEnroll()
             Store.setEnabled(this, true)
             startForegroundService(Intent(this, VoiceService::class.java))
         }
